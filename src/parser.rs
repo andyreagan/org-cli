@@ -427,35 +427,50 @@ pub fn parse_org_document(input: &str) -> Result<OrgDocument, String> {
                         body_lines.push(lines[line_idx]);
                         // Extract timestamps from body
                         let body_line = lines[line_idx];
-                        let mut pos = 0;
-                        while pos < body_line.len() {
-                            if let Some(start) = body_line[pos..].find('<') {
-                                let abs_start = pos + start;
+                        
+                        // Extract active timestamps using char-safe iteration
+                        let mut search_start = 0;
+                        while search_start < body_line.len() {
+                            if let Some(rel_start) = body_line[search_start..].find('<') {
+                                let abs_start = search_start + rel_start;
                                 if let Ok((_, ts)) = parse_active_timestamp(&body_line[abs_start..]) {
                                     entry.timestamps.push(ts);
                                 }
-                                pos = abs_start + 1;
+                                // Move past this '<' character safely (it's ASCII, so 1 byte)
+                                search_start = abs_start + 1;
                             } else {
                                 break;
                             }
                         }
-                        pos = 0;
-                        while pos < body_line.len() {
-                            if let Some(start) = body_line[pos..].find('[') {
-                                let abs_start = pos + start;
-                                // Don't parse links as timestamps
-                                if abs_start > 0 && &body_line[abs_start-1..abs_start] == "[" {
-                                    pos = abs_start + 1;
+                        
+                        // Extract inactive timestamps using char-safe iteration
+                        search_start = 0;
+                        while search_start < body_line.len() {
+                            if let Some(rel_start) = body_line[search_start..].find('[') {
+                                let abs_start = search_start + rel_start;
+                                // Don't parse links as timestamps - check for preceding '['
+                                // Use char-safe method to look at previous character
+                                let prev_char = if abs_start > 0 {
+                                    // Get the character just before abs_start
+                                    body_line[..abs_start].chars().last()
+                                } else {
+                                    None
+                                };
+                                if prev_char == Some('[') {
+                                    // This is part of '[[', skip it
+                                    search_start = abs_start + 1;
                                     continue;
                                 }
                                 if let Ok((_, ts)) = parse_inactive_timestamp(&body_line[abs_start..]) {
                                     entry.timestamps.push(ts);
                                 }
-                                pos = abs_start + 1;
+                                // Move past this '[' character safely (it's ASCII, so 1 byte)
+                                search_start = abs_start + 1;
                             } else {
                                 break;
                             }
                         }
+                        
                         // Extract links from body
                         let links = extract_links(body_line);
                         entry.links.extend(links);

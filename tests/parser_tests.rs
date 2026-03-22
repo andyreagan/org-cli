@@ -442,3 +442,148 @@ fn test_timestamp_with_time_range() {
     assert!(ts.active);
     assert!(ts.time.is_some());
 }
+
+// ==================== Unicode / UTF-8 Tests ====================
+// These tests reproduce panics from byte-indexing on multi-byte UTF-8 characters
+
+#[test]
+fn test_heading_with_non_breaking_space() {
+    // U+00A0 (non-breaking space) is a 2-byte UTF-8 character
+    let input = "* Heading with\u{00A0}non-breaking space\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries.len(), 1);
+    assert!(doc.entries[0].title.contains('\u{00A0}'));
+}
+
+#[test]
+fn test_link_with_unicode_url() {
+    // URL containing Unicode characters (common in Wikipedia links)
+    let input = "* Check [[https://example.com/café][Café Link]]\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries[0].links.len(), 1);
+    assert_eq!(doc.entries[0].links[0].url, "https://example.com/café");
+}
+
+#[test]
+fn test_body_with_smart_quotes() {
+    // Smart quotes are multi-byte UTF-8 characters: " " ' '
+    let input = "* Heading\nHe said \u{201C}Hello\u{201D} and \u{2018}Goodbye\u{2019}\n";
+    let doc = parse_org_document(input).unwrap();
+    assert!(doc.entries[0].body.contains('\u{201C}')); // left double quote
+    assert!(doc.entries[0].body.contains('\u{2019}')); // right single quote
+}
+
+#[test]
+fn test_body_with_em_dash() {
+    // Em-dash (—) is a 3-byte UTF-8 character
+    let input = "* Heading\nThis is important—very important.\n";
+    let doc = parse_org_document(input).unwrap();
+    assert!(doc.entries[0].body.contains('—'));
+}
+
+#[test]
+fn test_body_with_unicode_before_timestamp() {
+    // Unicode character immediately before a timestamp
+    // This triggers the bug in pos = abs_start + 1 when scanning for '<'
+    let input = "* Task\nMeeting at café <2026-03-21 Sat 14:00>\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries[0].timestamps.len(), 1);
+    assert_eq!(doc.entries[0].timestamps[0].date.year, 2026);
+}
+
+#[test]
+fn test_body_with_multiple_timestamps_after_unicode() {
+    // Multiple timestamps after Unicode - each iteration through the loop
+    // will trigger the byte boundary issue when pos is advanced
+    let input = "* Task\nFirst café <2026-03-21 Sat> then naïve <2026-03-22 Sun>\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries[0].timestamps.len(), 2);
+}
+
+#[test]
+fn test_body_with_unicode_before_inactive_timestamp() {
+    // Unicode character before an inactive timestamp (test the '[' search path)
+    let input = "* Note\nWrote this at café [2026-03-21 Sat]\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries[0].timestamps.len(), 1);
+    assert!(!doc.entries[0].timestamps[0].active);
+}
+
+#[test]
+fn test_multiple_links_with_unicode_between() {
+    // Unicode characters between multiple links
+    let input = "* Links: [[https://a.com][A]] — [[https://b.com][B]]\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries[0].links.len(), 2);
+}
+
+#[test]
+fn test_body_with_emoji() {
+    // Emojis are typically 4-byte UTF-8 sequences
+    let input = "* Heading\nThis is fun 🎉 and exciting 🚀\n";
+    let doc = parse_org_document(input).unwrap();
+    assert!(doc.entries[0].body.contains('🎉'));
+    assert!(doc.entries[0].body.contains('🚀'));
+}
+
+#[test]
+fn test_body_with_emoji_before_timestamp() {
+    // Emoji before a timestamp - tests the byte boundary issue with find('<')
+    let input = "* Event\nParty 🎉 <2026-03-21 Sat 20:00>\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries[0].timestamps.len(), 1);
+}
+
+#[test]
+fn test_body_with_chinese_characters() {
+    // Chinese characters are 3-byte UTF-8 sequences
+    let input = "* 任务\n这是一个任务 <2026-03-21 Sat>\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries[0].timestamps.len(), 1);
+    assert_eq!(doc.entries[0].title, "任务");
+}
+
+#[test]
+fn test_link_extraction_after_unicode() {
+    // Test extract_links function with Unicode before link
+    let input = "* Heading\nSee: \u{201C}important\u{201D} \u{2014} [[https://example.com][Link]]\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries[0].links.len(), 1);
+    assert_eq!(doc.entries[0].links[0].url, "https://example.com");
+}
+
+#[test]
+fn test_body_with_non_breaking_space_before_link() {
+    // Non-breaking space (U+00A0) is the exact character from the panic
+    // This tests extract_links with multi-byte char before [[
+    let input = "* Task\nCheck this\u{00A0}[[https://example.com][link]] now\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries[0].links.len(), 1);
+    assert_eq!(doc.entries[0].links[0].url, "https://example.com");
+}
+
+#[test]
+fn test_inactive_timestamp_scan_with_non_breaking_space_before_bracket() {
+    // This reproduces the exact panic: non-breaking space immediately before [[
+    // The bug is in: body_line[abs_start-1..abs_start] where abs_start-1 lands
+    // inside the multi-byte \u{a0} character
+    let input = "* Task\nCVS already\u{00A0}[[https://example.com][serves]] patients\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries[0].links.len(), 1);
+}
+
+#[test]
+fn test_body_with_tab_and_non_breaking_space_before_timestamp() {
+    // This matches the actual panic case: tab followed by content with non-breaking space
+    let input = "* Task\n\t- Check this\u{00A0}out <2026-03-21 Sat>\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries[0].timestamps.len(), 1);
+}
+
+#[test]
+fn test_consecutive_unicode_and_links() {
+    // Multiple Unicode chars interspersed with links
+    let input = "* Test\n日本語 [[https://ja.wikipedia.org][日本語Wiki]] と [[https://example.com][例]]\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries[0].links.len(), 2);
+}
