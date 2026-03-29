@@ -9,6 +9,8 @@ nom = "7.1"
 chrono = { version = "=0.4.23", default-features = false, features = ["std", "clock"] }
 anyhow = "=1.0.75"
 colored = "2.0.0"
+serde = { version = "1.0", features = ["derive"] }
+toml = "0.8"
 
 [dev-dependencies]
 tempfile = "=3.3.0"

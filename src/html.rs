@@ -1756,3 +1756,29 @@ fn generate_index(out_dir: &Path, pages: &[(String, String)]) -> Result<()> {
     fs::write(out_dir.join("index.html"), &html)?;
     Ok(())
 }
+
+/// Export a single `.org` file to HTML in `out_dir`.
+/// The output filename mirrors the source filename with `.html` extension.
+pub fn export_file(src: &Path, out_dir: &Path) -> Result<()> {
+    // Build a minimal id_map scoped to the file's parent directory
+    let parent = src.parent().unwrap_or(Path::new("."));
+    let id_map = build_id_index(parent).unwrap_or_default();
+
+    let content = fs::read_to_string(src)
+        .with_context(|| format!("Failed to read {}", src.display()))?;
+    let doc = parse_org_document(&content)
+        .map_err(|e| anyhow::anyhow!("Failed to parse {}: {}", src.display(), e))?;
+
+    let html = render_html(&doc, &id_map);
+
+    let out_name = src
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("output");
+    let out_path = out_dir.join(format!("{}.html", out_name));
+    fs::create_dir_all(out_dir)?;
+    fs::write(&out_path, &html)
+        .with_context(|| format!("Failed to write {}", out_path.display()))?;
+
+    Ok(())
+}
