@@ -596,6 +596,130 @@ pub fn serialize_org_document(doc: &OrgDocument) -> String {
     output
 }
 
+// ==================== Inline Markup Parsing ====================
+
+/// Parse inline markup in a text string, returning a list of fragments.
+/// Handles *bold*, /italic/, ~code~, =verbatim=, +strikethrough+, _underline_,
+/// and [[links]].
+pub fn parse_inline_markup(input: &str) -> Vec<InlineFragment> {
+    let mut fragments = Vec::new();
+    let chars: Vec<char> = input.chars().collect();
+    let len = chars.len();
+    let mut pos = 0;
+    let mut current_text = String::new();
+
+    while pos < len {
+        // Check for links first: [[...]]
+        if pos + 1 < len && chars[pos] == '[' && chars[pos + 1] == '[' {
+            // Try to parse a link
+            let remaining: String = chars[pos..].iter().collect();
+            if let Ok((_, link)) = parse_link(&remaining) {
+                if !current_text.is_empty() {
+                    fragments.push(InlineFragment::Text(current_text.clone()));
+                    current_text.clear();
+                }
+                // Advance pos past the link
+                let link_str = format_link_source(&link);
+                let link_char_len = link_str.chars().count();
+                pos += link_char_len;
+                fragments.push(InlineFragment::Link(link));
+                continue;
+            }
+        }
+
+        // Check for markup markers: * / ~ = + _
+        let marker = chars[pos];
+        if is_markup_char(marker) {
+            // Check pre-condition: must be at start of string or preceded by whitespace/punctuation
+            let pre_ok = pos == 0 || {
+                let prev = chars[pos - 1];
+                prev.is_whitespace() || is_pre_marker_char(prev)
+            };
+
+            if pre_ok {
+                // Look for matching closing marker
+                if let Some(end) = find_closing_marker(&chars, pos, marker) {
+                    // Check post-condition: closing marker must be at end or followed by whitespace/punctuation
+                    let post_ok = end + 1 >= len || {
+                        let next = chars[end + 1];
+                        next.is_whitespace() || is_post_marker_char(next)
+                    };
+
+                    if post_ok {
+                        // We have a valid markup span
+                        if !current_text.is_empty() {
+                            fragments.push(InlineFragment::Text(current_text.clone()));
+                            current_text.clear();
+                        }
+                        let content: String = chars[pos + 1..end].iter().collect();
+                        let fragment = match marker {
+                            '*' => InlineFragment::Bold(content),
+                            '/' => InlineFragment::Italic(content),
+                            '~' => InlineFragment::Code(content),
+                            '=' => InlineFragment::Verbatim(content),
+                            '+' => InlineFragment::Strikethrough(content),
+                            '_' => InlineFragment::Underline(content),
+                            _ => unreachable!(),
+                        };
+                        fragments.push(fragment);
+                        pos = end + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+
+        current_text.push(chars[pos]);
+        pos += 1;
+    }
+
+    if !current_text.is_empty() {
+        fragments.push(InlineFragment::Text(current_text));
+    }
+
+    fragments
+}
+
+fn is_markup_char(c: char) -> bool {
+    matches!(c, '*' | '/' | '~' | '=' | '+' | '_')
+}
+
+fn is_pre_marker_char(c: char) -> bool {
+    // Characters that can precede an opening markup marker
+    matches!(c, '(' | '{' | '\'' | '"' | '-' | '<' | '[')
+}
+
+fn is_post_marker_char(c: char) -> bool {
+    // Characters that can follow a closing markup marker
+    matches!(c, ')' | '}' | '\'' | '"' | '-' | '.' | ',' | ';' | ':' | '!' | '?' | '>' | ']')
+}
+
+fn find_closing_marker(chars: &[char], open_pos: usize, marker: char) -> Option<usize> {
+    // Search for a closing marker after at least one character
+    for i in (open_pos + 2)..chars.len() {
+        if chars[i] == marker {
+            // The character before the closing marker must not be whitespace
+            if !chars[i - 1].is_whitespace() {
+                return Some(i);
+            }
+        }
+    }
+    None
+}
+
+fn format_link_source(link: &Link) -> String {
+    let mut s = String::from("[[");
+    s.push_str(&link.url);
+    s.push(']');
+    if let Some(ref desc) = link.description {
+        s.push('[');
+        s.push_str(desc);
+        s.push(']');
+    }
+    s.push(']');
+    s
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

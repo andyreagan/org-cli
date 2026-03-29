@@ -90,6 +90,35 @@ pub struct Link {
     pub description: Option<String>,
 }
 
+impl Link {
+    /// Returns true if this is an org-id link (url starts with "id:")
+    pub fn is_id_link(&self) -> bool {
+        self.url.starts_with("id:")
+    }
+
+    /// Returns the ID value if this is an id link, stripping the "id:" prefix
+    pub fn id_value(&self) -> Option<&str> {
+        if self.is_id_link() {
+            Some(&self.url[3..])
+        } else {
+            None
+        }
+    }
+}
+
+/// Represents a fragment of inline markup within text
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum InlineFragment {
+    Text(String),
+    Bold(String),
+    Italic(String),
+    Code(String),
+    Verbatim(String),
+    Strikethrough(String),
+    Underline(String),
+    Link(Link),
+}
+
 #[derive(Debug, Clone)]
 pub struct OrgEntry {
     pub level: usize,
@@ -125,6 +154,11 @@ impl OrgEntry {
             line_number: 0,
         }
     }
+
+    /// Returns the org-id (:ID: property) of this entry, if any
+    pub fn id(&self) -> Option<&str> {
+        self.properties.get("ID").map(|s| s.as_str())
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -139,6 +173,52 @@ impl OrgDocument {
             preamble: String::new(),
             entries: Vec::new(),
         }
+    }
+
+    /// Extract a #+KEYWORD value from the preamble
+    pub fn keyword_value(&self, keyword: &str) -> Option<&str> {
+        let prefix = format!("#+{}:", keyword);
+        for line in self.preamble.lines() {
+            let trimmed = line.trim();
+            if trimmed.to_uppercase().starts_with(&prefix.to_uppercase()) {
+                let value = trimmed[prefix.len()..].trim();
+                if !value.is_empty() {
+                    return Some(value);
+                }
+            }
+        }
+        None
+    }
+
+    /// Returns the #+TITLE value if present in the preamble
+    pub fn title(&self) -> Option<&str> {
+        self.keyword_value("TITLE")
+    }
+
+    /// Returns the #+AUTHOR value if present in the preamble
+    pub fn author(&self) -> Option<&str> {
+        self.keyword_value("AUTHOR")
+    }
+
+    /// Parse #+OPTIONS: line and return value for a specific option key
+    pub fn option_value(&self, key: &str) -> Option<String> {
+        // OPTIONS can appear multiple times, all are merged
+        for line in self.preamble.lines() {
+            let trimmed = line.trim();
+            if trimmed.to_uppercase().starts_with("#+OPTIONS:") {
+                let opts = trimmed[10..].trim();
+                for part in opts.split_whitespace() {
+                    if let Some(colon) = part.find(':') {
+                        let k = &part[..colon];
+                        let v = &part[colon + 1..];
+                        if k == key {
+                            return Some(v.to_string());
+                        }
+                    }
+                }
+            }
+        }
+        None
     }
 }
 

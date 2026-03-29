@@ -3,6 +3,7 @@ use clap::{Parser, Subcommand};
 use std::path::PathBuf;
 
 mod commands;
+mod html;
 mod parser;
 mod types;
 
@@ -89,6 +90,16 @@ enum Commands {
         /// File to show
         file: PathBuf,
     },
+    
+    /// Export org files as HTML site with resolved org-id links
+    Export {
+        /// Path to directory of org files to export
+        path: PathBuf,
+        
+        /// Output directory for HTML files
+        #[clap(long, short)]
+        output: PathBuf,
+    },
 }
 
 fn main() -> Result<()> {
@@ -115,6 +126,10 @@ fn main() -> Result<()> {
         }
         Commands::Show { file } => {
             show_file(&file)?;
+        }
+        Commands::Export { path, output } => {
+            html::export_site(&path, &output)?;
+            println!("Exported to {}", output.display());
         }
     }
     
