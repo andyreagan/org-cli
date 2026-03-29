@@ -1,0 +1,71 @@
+#+TITLE: org-cli
+
+[[https://github.com/andyreagan/org-cli/actions/workflows/test.yml][https://github.com/andyreagan/org-cli/actions/workflows/test.yml/badge.svg]]
+[[https://github.com/andyreagan/org-cli/actions/workflows/release.yml][https://github.com/andyreagan/org-cli/actions/workflows/release.yml/badge.svg]]
+
+A Rust CLI for interacting with org-mode files.
+
+** Features
+
+- *List* TODO/NEXT/WAITING items across files, grouped by keyword
+- *Add* new TODO items with optional tags
+- *Done / Cancel / Wait* — update item status with timestamps
+- *Reschedule* items to a new date
+- *Show* pretty-printed headings and TODOs
+- *Export* org files to an HTML site with resolved =org-id= links
+
+** Install
+
+Download a binary from the [[https://github.com/andyreagan/org-cli/releases/latest][latest release]] for your platform:
+
+#+begin_src bash
+# macOS Apple Silicon
+curl -L https://github.com/andyreagan/org-cli/releases/latest/download/org-cli-aarch64-apple-darwin.tar.gz | tar xz
+sudo mv org-cli /usr/local/bin/
+
+# macOS Intel
+curl -L https://github.com/andyreagan/org-cli/releases/latest/download/org-cli-x86_64-apple-darwin.tar.gz | tar xz
+sudo mv org-cli /usr/local/bin/
+
+# Linux x86_64
+curl -L https://github.com/andyreagan/org-cli/releases/latest/download/org-cli-x86_64-unknown-linux-gnu.tar.gz | tar xz
+sudo mv org-cli /usr/local/bin/
+
+# Linux aarch64
+curl -L https://github.com/andyreagan/org-cli/releases/latest/download/org-cli-aarch64-unknown-linux-gnu.tar.gz | tar xz
+sudo mv org-cli /usr/local/bin/
+#+end_src
+
+Or build from source:
+
+#+begin_src bash
+cargo install --path .
+#+end_src
+
+** Usage
+
+#+begin_src bash
+# List all actionable items
+org-cli list ~/org/
+
+# Add a TODO
+org-cli add "Write README" --file ~/org/tasks.org --tag docs
+
+# Mark done / cancel / wait
+org-cli done ~/org/tasks.org 12
+org-cli cancel ~/org/tasks.org 15
+org-cli wait ~/org/tasks.org 18 --date 2026-04-01
+
+# Reschedule
+org-cli reschedule ~/org/tasks.org 12 --date 2026-04-15
+
+# Pretty-print a file
+org-cli show ~/org/tasks.org
+
+# Export to HTML
+org-cli export ~/org/ --output ~/public_html/
+#+end_src
+
+** License
+
+MIT
