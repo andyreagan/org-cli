@@ -3,13 +3,14 @@ use org_cli::parser::parse_org_document;
 use std::collections::HashMap;
 
 #[test]
-fn test_toc_generated_by_default() {
-    let input = "#+TITLE: Doc\n* Chapter One\n** Section A\n* Chapter Two\n";
+fn test_toc_generated_when_enabled() {
+    // ToC is opt-in via #+OPTIONS: toc:t
+    let input = "#+TITLE: Doc\n#+OPTIONS: toc:t\n* Chapter One\n** Section A\n* Chapter Two\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(
-        html.contains("Table of Contents") || html.contains("table-of-contents") || html.contains("toc"),
-        "Expected TOC, got:\n{}",
+        html.contains("Table of Contents") || html.contains("table-of-contents"),
+        "Expected TOC with toc:t, got:\n{}",
         html
     );
     assert!(html.contains("Chapter One"));
@@ -18,11 +19,22 @@ fn test_toc_generated_by_default() {
 }
 
 #[test]
-fn test_toc_contains_links() {
-    let input = "* First\n* Second\n";
+fn test_toc_off_by_default() {
+    // Without #+OPTIONS: toc:t, no ToC should be generated
+    let input = "#+TITLE: Doc\n* Chapter One\n* Chapter Two\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
-    // TOC entries should be links to the headings
+    let html = render_html(&doc, &HashMap::new(), None);
+    assert!(
+        !html.contains("Table of Contents") && !html.contains("table-of-contents"),
+        "ToC should be OFF by default (matching org-html-with-toc nil)"
+    );
+}
+
+#[test]
+fn test_toc_contains_links() {
+    let input = "#+OPTIONS: toc:t\n* First\n* Second\n";
+    let doc = parse_org_document(input).unwrap();
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(
         html.contains("href=\"#"),
         "TOC should contain anchor links"
@@ -33,7 +45,7 @@ fn test_toc_contains_links() {
 fn test_toc_disabled() {
     let input = "#+OPTIONS: toc:nil\n* Chapter One\n* Chapter Two\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     // Should NOT have a TOC section before the content
     let body_start = html.find("<body>").unwrap_or(0);
     let first_h1 = html.find("<h1").unwrap_or(html.len());
@@ -48,7 +60,7 @@ fn test_toc_disabled() {
 fn test_toc_depth_limited() {
     let input = "#+OPTIONS: toc:1\n* Chapter\n** Section\n*** Subsection\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     // TOC should include Chapter but not Section or Subsection
     // Find the TOC section
     if let Some(toc_start) = html.find("table-of-contents") {
@@ -63,7 +75,7 @@ fn test_toc_depth_limited() {
 fn test_toc_nested_structure() {
     let input = "* Chapter\n** Section\n* Chapter 2\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     // Should have nested lists in TOC
     if let Some(toc_start) = html.find("table-of-contents") {
         let toc_end = html[toc_start..].find("</nav>").or_else(|| html[toc_start..].find("</div>")).unwrap_or(500);

@@ -17,7 +17,7 @@ fn test_parse_unordered_list_dash() {
 fn test_render_unordered_list_dash() {
     let input = "* Heading\n- item one\n- item two\n- item three\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<ul>"), "Expected <ul>, got:\n{}", html);
     assert!(html.contains("<li>"), "Expected <li>");
     assert!(html.contains("item one"));
@@ -30,7 +30,7 @@ fn test_render_unordered_list_dash() {
 fn test_render_unordered_list_plus() {
     let input = "* Heading\n+ item one\n+ item two\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<ul>"));
     assert!(html.contains("item one"));
     assert!(html.contains("item two"));
@@ -42,7 +42,7 @@ fn test_render_unordered_list_plus() {
 fn test_render_ordered_list_dot() {
     let input = "* Heading\n1. first\n2. second\n3. third\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<ol>"), "Expected <ol>, got:\n{}", html);
     assert!(html.contains("first"));
     assert!(html.contains("second"));
@@ -54,7 +54,7 @@ fn test_render_ordered_list_dot() {
 fn test_render_ordered_list_paren() {
     let input = "* Heading\n1) first\n2) second\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<ol>"), "Expected <ol>, got:\n{}", html);
     assert!(html.contains("first"));
 }
@@ -65,7 +65,7 @@ fn test_render_ordered_list_paren() {
 fn test_render_description_list() {
     let input = "* Heading\n- Emacs :: A text editor\n- Vim :: Another text editor\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<dl>"), "Expected <dl>, got:\n{}", html);
     assert!(html.contains("<dt>"), "Expected <dt>");
     assert!(html.contains("Emacs"));
@@ -80,7 +80,7 @@ fn test_render_description_list() {
 fn test_render_nested_unordered_list() {
     let input = "* Heading\n- parent one\n  - child one\n  - child two\n- parent two\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     // Should have nested <ul> tags
     let ul_count = html.matches("<ul>").count();
     assert!(
@@ -99,7 +99,7 @@ fn test_render_nested_unordered_list() {
 fn test_render_nested_mixed_list() {
     let input = "* Heading\n1. first ordered\n   - nested unordered\n   - nested unordered 2\n2. second ordered\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<ol>"), "Expected <ol>");
     assert!(html.contains("<ul>"), "Expected nested <ul>");
     assert!(html.contains("first ordered"));
@@ -113,7 +113,7 @@ fn test_render_nested_mixed_list() {
 fn test_render_checkbox_unchecked() {
     let input = "* Heading\n- [ ] buy milk\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<li>"), "Expected <li>");
     // Should render a checkbox or checkbox indicator
     assert!(
@@ -128,7 +128,7 @@ fn test_render_checkbox_unchecked() {
 fn test_render_checkbox_checked() {
     let input = "* Heading\n- [X] buy milk\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<li>"));
     assert!(
         html.contains("checked") || html.contains("☑") || html.contains("[X]"),
@@ -142,7 +142,7 @@ fn test_render_checkbox_checked() {
 fn test_render_checkbox_partial() {
     let input = "* Heading\n- [-] partially done\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("partially done"));
 }
 
@@ -152,7 +152,7 @@ fn test_render_checkbox_partial() {
 fn test_render_list_preceded_by_paragraph() {
     let input = "* Heading\nSome intro text.\n- item one\n- item two\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<p>"));
     assert!(html.contains("Some intro text."));
     assert!(html.contains("<ul>"));
@@ -163,7 +163,7 @@ fn test_render_list_preceded_by_paragraph() {
 fn test_render_list_followed_by_paragraph() {
     let input = "* Heading\n- item one\n- item two\n\nSome closing text.\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<ul>"));
     assert!(html.contains("</ul>"));
     assert!(html.contains("Some closing text."));
@@ -175,7 +175,7 @@ fn test_render_list_followed_by_paragraph() {
 fn test_render_multiline_list_item() {
     let input = "* Heading\n- item one which\n  continues on next line\n- item two\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<ul>"));
     // The continued text should be part of the same <li>
     assert!(html.contains("item one which"));
@@ -189,7 +189,7 @@ fn test_render_multiline_list_item() {
 fn test_render_list_with_inline_markup() {
     let input = "* Heading\n- *bold* item\n- /italic/ item\n- item with [[https://example.com][link]]\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<strong>bold</strong>"));
     assert!(html.contains("<em>italic</em>"));
     assert!(html.contains("href=\"https://example.com\""));
@@ -201,7 +201,7 @@ fn test_render_list_with_inline_markup() {
 fn test_render_empty_list_item() {
     let input = "* Heading\n- \n- item two\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     // Should not crash, should produce valid HTML
     assert!(html.contains("<ul>"));
     assert!(html.contains("item two"));
@@ -211,7 +211,7 @@ fn test_render_empty_list_item() {
 fn test_render_list_ends_at_two_blank_lines() {
     let input = "* Heading\n- item one\n- item two\n\n\nNot a list item.\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<ul>"));
     assert!(html.contains("</ul>"));
     // "Not a list item" should be in a paragraph, not a list
@@ -224,7 +224,7 @@ fn test_render_body_without_list_still_works() {
     // Regression: make sure normal body text is not broken
     let input = "#+OPTIONS: toc:nil\n* Heading\nJust some normal text.\nAnother line.\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     assert!(html.contains("<p>"));
     assert!(html.contains("Just some normal text."));
     // No list in the body content (TOC disabled so no <ul> at all)
@@ -236,7 +236,7 @@ fn test_render_body_without_list_still_works() {
 fn test_render_deeply_nested_list() {
     let input = "* Heading\n- level 1\n  - level 2\n    - level 3\n";
     let doc = parse_org_document(input).unwrap();
-    let html = render_html(&doc, &HashMap::new());
+    let html = render_html(&doc, &HashMap::new(), None);
     let ul_count = html.matches("<ul>").count();
     assert!(
         ul_count >= 3,

@@ -134,6 +134,8 @@ pub struct OrgEntry {
     pub links: Vec<Link>,
     pub body: String,
     pub line_number: usize,
+    /// Raw content lines from the :BACKLINKS: drawer (the /Backlinks: .../ line).
+    pub backlinks_raw: Option<String>,
 }
 
 impl OrgEntry {
@@ -152,6 +154,7 @@ impl OrgEntry {
             links: Vec::new(),
             body: String::new(),
             line_number: 0,
+            backlinks_raw: None,
         }
     }
 

@@ -587,3 +587,48 @@ fn test_consecutive_unicode_and_links() {
     let doc = parse_org_document(input).unwrap();
     assert_eq!(doc.entries[0].links.len(), 2);
 }
+
+// ==================== Drawer skipping ====================
+
+#[test]
+fn test_backlinks_drawer_not_in_body() {
+    let input = "* Heading\n:PROPERTIES:\n:ID: abc\n:END:\n:BACKLINKS:\n/Backlinks: [[id:XYZ][Other]]/\n:END:\n\nBody text.\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries.len(), 1);
+    let body = &doc.entries[0].body;
+    assert!(!body.contains("BACKLINKS"), "BACKLINKS drawer should not appear in body, got: {}", body);
+    assert!(!body.contains(":END:"), ":END: should not appear in body");
+    assert!(body.contains("Body text."), "real body text should be present");
+}
+
+#[test]
+fn test_logbook_drawer_not_in_body() {
+    let input = "* TODO Task\n:LOGBOOK:\nCLOCK: [2026-01-01 Thu 09:00]\n:END:\n\nTask body.\n";
+    let doc = parse_org_document(input).unwrap();
+    assert_eq!(doc.entries.len(), 1);
+    let body = &doc.entries[0].body;
+    assert!(!body.contains("LOGBOOK"), "LOGBOOK drawer should not appear in body");
+    assert!(body.contains("Task body."));
+}
+
+#[test]
+fn test_multiple_drawers_all_skipped() {
+    let input = "* Heading\n:PROPERTIES:\n:ID: abc\n:END:\n:BACKLINKS:\n/some link/\n:END:\n:LOGBOOK:\nentry\n:END:\n\nActual body.\n";
+    let doc = parse_org_document(input).unwrap();
+    let body = &doc.entries[0].body;
+    assert!(!body.contains("BACKLINKS"));
+    assert!(!body.contains("LOGBOOK"));
+    assert!(body.contains("Actual body."));
+}
+
+#[test]
+fn test_backlinks_captured_in_entry() {
+    let input = "* Heading\n:PROPERTIES:\n:ID: abc\n:END:\n:BACKLINKS:\n/Backlinks: [[id:XYZ][Other Page]]/\n:END:\n\nBody.\n";
+    let doc = parse_org_document(input).unwrap();
+    let entry = &doc.entries[0];
+    assert!(entry.backlinks_raw.is_some(), "backlinks_raw should be captured");
+    let raw = entry.backlinks_raw.as_ref().unwrap();
+    assert!(raw.contains("Other Page"), "should contain link title");
+    assert!(raw.contains("id:XYZ"), "should contain link id");
+    assert!(!entry.body.contains("BACKLINKS"), "body must not contain drawer text");
+}

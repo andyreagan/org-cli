@@ -14,6 +14,30 @@ use std::path::{Path, PathBuf};
 
 // ==================== #13 — safe directory scanning ====================
 
+/// Collect all `.org` files under `dir` (recursive), skipping Emacs
+/// lock symlinks (`.#*.org`).
+pub fn collect_org_files_recursive(dir: &Path) -> Result<Vec<PathBuf>> {
+    let mut files = Vec::new();
+    if !dir.is_dir() {
+        return Ok(files);
+    }
+    for entry in std::fs::read_dir(dir)? {
+        let entry = entry?;
+        let path = entry.path();
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if name.starts_with(".#") {
+            continue;
+        }
+        if path.is_dir() {
+            files.extend(collect_org_files_recursive(&path)?);
+        } else if path.is_file() && path.extension().map_or(false, |e| e == "org") {
+            files.push(path);
+        }
+    }
+    files.sort();
+    Ok(files)
+}
+
 /// Collect all `.org` files under `dir` (non-recursive), skipping Emacs
 /// lock symlinks (`.#*.org`).
 pub fn collect_org_files(dir: &Path) -> Result<Vec<PathBuf>> {

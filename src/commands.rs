@@ -1,3 +1,4 @@
+use crate::normalise::collect_org_files_recursive;
 use crate::parser::{parse_org_document, serialize_org_document};
 use crate::types::*;
 use anyhow::{Context, Result};
@@ -9,26 +10,16 @@ use std::path::{Path, PathBuf};
 
 // ==================== File Operations ====================
 
+/// Find all `.org` files at `path` (recursive if directory), skipping Emacs lock files.
 pub fn find_org_files(path: &Path) -> Result<Vec<PathBuf>> {
-    let mut files = Vec::new();
-    
     if path.is_file() {
-        if path.extension().map_or(false, |ext| ext == "org") {
-            files.push(path.to_path_buf());
+        let name = path.file_name().and_then(|n| n.to_str()).unwrap_or("");
+        if !name.starts_with(".#") && path.extension().map_or(false, |e| e == "org") {
+            return Ok(vec![path.to_path_buf()]);
         }
-    } else if path.is_dir() {
-        for entry in fs::read_dir(path)? {
-            let entry = entry?;
-            let entry_path = entry.path();
-            if entry_path.is_dir() {
-                files.extend(find_org_files(&entry_path)?);
-            } else if entry_path.extension().map_or(false, |ext| ext == "org") {
-                files.push(entry_path);
-            }
-        }
+        return Ok(vec![]);
     }
-    
-    Ok(files)
+    collect_org_files_recursive(path)
 }
 
 pub fn read_and_parse_file(path: &Path) -> Result<OrgDocument> {

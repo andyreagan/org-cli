@@ -17,60 +17,78 @@ use std::path::{Path, PathBuf};
 
 /// Strip `prefix` from all `href="..."` and `src="..."` attribute values
 /// in `html`. Only attribute values are affected, not visible text.
+///
+/// Runs in O(n) — a single left-to-right pass with no backtracking.
 pub fn strip_path_prefix(html: &str, prefix: &str) -> (String, bool) {
     if prefix.is_empty() {
         return (html.to_string(), false);
     }
     let mut changed = false;
-    // We rewrite attribute values only: href="PREFIX..." and src="PREFIX..."
     let mut out = String::with_capacity(html.len());
-    let mut remaining = html;
 
-    for attr in &["href=\"", "src=\""] {
-        let _ = attr; // iterated below
-    }
+    // State machine over bytes:
+    //   Normal   → looking for 'h' (href) or 's' (src)
+    //   InValue  → inside the attribute value, looking for the closing '"'
+    //              and stripping `prefix` if encountered
+    //
+    // We track the current position as a byte index into `html` and build
+    // `out` by appending slices — no O(n²) re-scanning.
 
-    // Simple state-machine: scan for href=" or src=" then rewrite value
-    while !remaining.is_empty() {
-        // Find earliest of href=" or src="
-        let href_pos = remaining.find("href=\"").map(|p| (p, 6usize));
-        let src_pos = remaining.find("src=\"").map(|p| (p, 5usize));
+    let bytes = html.as_bytes();
+    let n = bytes.len();
+    let mut i = 0usize;
 
-        let found = match (href_pos, src_pos) {
-            (Some(h), Some(s)) => Some(if h.0 <= s.0 { h } else { s }),
-            (Some(h), None) => Some(h),
-            (None, Some(s)) => Some(s),
-            (None, None) => None,
-        };
-
-        let Some((pos, attr_len)) = found else {
-            out.push_str(remaining);
-            break;
-        };
-
-        out.push_str(&remaining[..pos + attr_len]);
-        remaining = &remaining[pos + attr_len..];
-
-        // Now we're just after the opening quote — find the closing quote
-        let Some(close) = remaining.find('"') else {
-            out.push_str(remaining);
-            break;
-        };
-        let value = &remaining[..close];
-
-        // Strip prefix if present
-        let new_value = if value.contains(prefix) {
-            changed = true;
-            value.replace(prefix, "")
+    while i < n {
+        // Try to match href=" or src=" starting at i
+        let attr_len = if html[i..].starts_with("href=\"") {
+            6usize
+        } else if html[i..].starts_with("src=\"") {
+            5usize
         } else {
-            value.to_string()
+            0
         };
 
-        out.push_str(&new_value);
-        remaining = &remaining[close..]; // leave the closing quote for next iteration
+        if attr_len == 0 {
+            // Not an attribute start — emit byte and advance
+            // (safe: we advance one byte at a time only on ASCII or multi-byte starts)
+            let ch_len = leading_char_len(bytes, i);
+            out.push_str(&html[i..i + ch_len]);
+            i += ch_len;
+            continue;
+        }
+
+        // Emit the attribute name+quote (e.g. `href="`)
+        out.push_str(&html[i..i + attr_len]);
+        i += attr_len;
+
+        // Find the closing quote of the attribute value
+        let value_start = i;
+        while i < n && bytes[i] != b'"' {
+            i += 1;
+        }
+        let value = &html[value_start..i];
+
+        // Strip prefix from the value
+        if value.contains(prefix) {
+            out.push_str(&value.replace(prefix, ""));
+            changed = true;
+        } else {
+            out.push_str(value);
+        }
+        // Leave i pointing at the closing '"' so the next iteration emits it normally
     }
 
     (out, changed)
+}
+
+/// Return the byte-length of the UTF-8 character starting at `bytes[i]`.
+#[inline]
+fn leading_char_len(bytes: &[u8], i: usize) -> usize {
+    let b = bytes[i];
+    if b < 0x80 { 1 }
+    else if b < 0xE0 { 2 }
+    else if b < 0xF0 { 3 }
+    else { 4 }
 }
 
 // ==================== #6 — hidden/private class redaction ====================
@@ -155,8 +173,9 @@ fn find_redactable_open_tag(s: &str) -> Option<(usize, usize, String)> {
 }
 
 fn has_redact_class(tag_body: &str) -> bool {
-    // Find class="..." value
-    if let Some(ci) = tag_body.to_lowercase().find("class=") {
+    // Find class="..." value (case-insensitive search without allocating)
+    let lower = tag_body.to_ascii_lowercase();
+    if let Some(ci) = lower.find("class=") {
         let rest = &tag_body[ci + 6..];
         let value = if rest.starts_with('"') {
             let inner = &rest[1..];
@@ -193,12 +212,14 @@ fn find_element_end(s: &str) -> Option<usize> {
     let mut depth = 0usize;
     let mut i = 0usize;
     let bytes = s.as_bytes();
+    let open_bytes = open_pat.as_bytes();
+    let close_bytes = close_pat.as_bytes();
 
     while i < bytes.len() {
-        if s[i..].to_lowercase().starts_with(&open_pat) {
+        if starts_with_ignore_ascii_case(&bytes[i..], open_bytes) {
             depth += 1;
-            i += open_pat.len();
-        } else if s[i..].to_lowercase().starts_with(&close_pat) {
+            i += open_bytes.len();
+        } else if starts_with_ignore_ascii_case(&bytes[i..], close_bytes) {
             depth -= 1;
             if depth == 0 {
                 // Skip past the closing ">"
@@ -207,12 +228,22 @@ fn find_element_end(s: &str) -> Option<usize> {
                 }
                 return None;
             }
-            i += close_pat.len();
+            i += close_bytes.len();
         } else {
             i += 1;
         }
     }
     None
+}
+
+/// O(prefix_len) ASCII-case-insensitive prefix match — no allocation.
+#[inline]
+fn starts_with_ignore_ascii_case(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.len() >= needle.len()
+        && haystack[..needle.len()]
+            .iter()
+            .zip(needle.iter())
+            .all(|(h, n)| h.to_ascii_lowercase() == *n)
 }
 
 // ==================== #7 — personal information scrubbing ====================

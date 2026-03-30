@@ -421,6 +421,33 @@ pub fn parse_org_document(input: &str) -> Result<OrgDocument, String> {
                         }
                     }
                     
+                    // Consume any additional drawers after :PROPERTIES:
+                    // Capture :BACKLINKS: content; silently skip everything else.
+                    loop {
+                        if line_idx >= lines.len() { break; }
+                        let next = lines[line_idx].trim();
+                        // A drawer opens with :NAME: on its own line
+                        if next.starts_with(':') && next.ends_with(':') && next.len() > 2 && !next.starts_with(":END:") {
+                            let is_backlinks = next.eq_ignore_ascii_case(":BACKLINKS:");
+                            line_idx += 1;
+                            let mut drawer_content = String::new();
+                            while line_idx < lines.len() {
+                                if lines[line_idx].trim() == ":END:" {
+                                    line_idx += 1;
+                                    break;
+                                }
+                                drawer_content.push_str(lines[line_idx].trim());
+                                drawer_content.push('\n');
+                                line_idx += 1;
+                            }
+                            if is_backlinks && !drawer_content.trim().is_empty() {
+                                entry.backlinks_raw = Some(drawer_content.trim().to_string());
+                            }
+                        } else {
+                            break;
+                        }
+                    }
+
                     // Collect body text until next heading
                     let mut body_lines = Vec::new();
                     while line_idx < lines.len() && !lines[line_idx].starts_with('*') {
@@ -609,6 +636,40 @@ pub fn parse_inline_markup(input: &str) -> Vec<InlineFragment> {
     let mut current_text = String::new();
 
     while pos < len {
+        // Check for bare URLs: http:// or https://
+        // Org-mode auto-links plain URLs at word boundaries.
+        {
+            let remaining: String = chars[pos..].iter().collect();
+            if remaining.starts_with("https://") || remaining.starts_with("http://") {
+                // Pre-condition: must be at start or preceded by whitespace/punctuation
+                let pre_ok = pos == 0 || {
+                    let prev = chars[pos - 1];
+                    prev.is_whitespace() || "([{<\"'".contains(prev)
+                };
+                if pre_ok {
+                    // Consume URL characters (no whitespace, no common trailing punctuation)
+                    let url_end = remaining
+                        .find(|c: char| c.is_whitespace() || "\"'<>[](){}".contains(c))
+                        .unwrap_or(remaining.len());
+                    // Strip trailing punctuation that is unlikely part of the URL
+                    let url_raw = remaining[..url_end].trim_end_matches(|c| ".,;:!?)".contains(c));
+                    if url_raw.len() > 8 {
+                        if !current_text.is_empty() {
+                            fragments.push(InlineFragment::Text(current_text.clone()));
+                            current_text.clear();
+                        }
+                        let link = crate::types::Link {
+                            url: url_raw.to_string(),
+                            description: None,
+                        };
+                        pos += url_raw.chars().count();
+                        fragments.push(InlineFragment::Link(link));
+                        continue;
+                    }
+                }
+            }
+        }
+
         // Check for links first: [[...]]
         if pos + 1 < len && chars[pos] == '[' && chars[pos + 1] == '[' {
             // Try to parse a link

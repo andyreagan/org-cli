@@ -74,10 +74,19 @@ pub struct SiteConfig {
     pub output_dir: String,
     /// Extra directories copied verbatim into output.
     pub static_dirs: Vec<String>,
+    /// Individual files copied verbatim to the output root (after index generation,
+    /// so they can override the auto-generated index.html).
+    pub root_files: Vec<String>,
     /// Absolute path prefix to strip from href/src attributes in HTML output.
     pub strip_path_prefix: String,
     /// Path to the HTML file served for private pages.
     pub private_placeholder: String,
+    /// Path to an HTML file whose contents are injected after <body> on every page (nav header).
+    pub preamble: String,
+    /// Path to an HTML file injected inside <head> to replace the built-in stylesheet.
+    pub head: String,
+    /// Path to an HTML file injected at the end of <head> (favicon, extra meta, etc.).
+    pub head_extra: String,
 }
 
 impl Default for SiteConfig {
@@ -88,8 +97,12 @@ impl Default for SiteConfig {
             source_dir: ".".into(),
             output_dir: "public_html".into(),
             static_dirs: vec!["static".into()],
+            root_files: Vec::new(),
             strip_path_prefix: String::new(),
             private_placeholder: "private.html".into(),
+            preamble: String::new(),
+            head: String::new(),
+            head_extra: String::new(),
         }
     }
 }
