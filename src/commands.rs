@@ -2,7 +2,7 @@ use crate::normalise::collect_org_files_recursive;
 use crate::parser::{parse_org_document, serialize_org_document};
 use crate::types::*;
 use anyhow::{Context, Result};
-use chrono::{Datelike, Local, NaiveDate, Timelike};
+use chrono::{Datelike, Duration, Local, NaiveDate, Timelike};
 use colored::*;
 use std::collections::HashMap;
 use std::fs;
@@ -393,5 +393,290 @@ pub fn show_file(file: &Path) -> Result<()> {
         }
     }
     
+    Ok(())
+}
+
+// ==================== todo next / todo set ====================
+
+pub fn mark_next(file: &Path, line: usize) -> Result<()> {
+    let mut doc = read_and_parse_file(file)?;
+    let entry_idx = doc.entries.iter()
+        .position(|e| e.line_number == line)
+        .ok_or_else(|| anyhow::anyhow!("No entry found at line {}", line))?;
+    let entry = &mut doc.entries[entry_idx];
+    entry.keyword = Some(Keyword::Next);
+    let title = entry.title.clone();
+    write_document(file, &doc)?;
+    println!("Marked NEXT: {}", title);
+    Ok(())
+}
+
+pub fn set_keyword(file: &Path, line: usize, keyword: &str) -> Result<()> {
+    let kw = Keyword::from_str(&keyword.to_uppercase())
+        .ok_or_else(|| anyhow::anyhow!(
+            "Unknown keyword '{}'. Valid values: TODO, NEXT, IN-PROGRESS, WAITING, DONE, CANCELLED",
+            keyword
+        ))?;
+    let mut doc = read_and_parse_file(file)?;
+    let entry_idx = doc.entries.iter()
+        .position(|e| e.line_number == line)
+        .ok_or_else(|| anyhow::anyhow!("No entry found at line {}", line))?;
+
+    let now = Local::now();
+    let entry = &mut doc.entries[entry_idx];
+    entry.keyword = Some(kw.clone());
+
+    // Add CLOSED timestamp when transitioning to a terminal state
+    if matches!(kw, Keyword::Done | Keyword::Cancelled) {
+        entry.closed = Some(Timestamp {
+            active: false,
+            date: Date {
+                year: now.year(),
+                month: now.month(),
+                day: now.day(),
+                weekday: Some(now.format("%a").to_string()),
+            },
+            time: Some(Time { hour: now.hour(), minute: now.minute() }),
+            end_time: None,
+            repeater: None,
+        });
+    }
+
+    let title = entry.title.clone();
+    write_document(file, &doc)?;
+    println!("Set keyword {} on: {}", kw.as_str(), title);
+    Ok(())
+}
+
+// ==================== schedule deadline / schedule clear ====================
+
+pub fn set_deadline(file: &Path, line: usize, date_str: &str) -> Result<()> {
+    let mut doc = read_and_parse_file(file)?;
+    let entry_idx = doc.entries.iter()
+        .position(|e| e.line_number == line)
+        .ok_or_else(|| anyhow::anyhow!("No entry found at line {}", line))?;
+
+    let parsed_date = NaiveDate::parse_from_str(date_str, "%Y-%m-%d")
+        .with_context(|| format!("Invalid date format: {}", date_str))?;
+
+    let entry = &mut doc.entries[entry_idx];
+    entry.deadline = Some(Timestamp {
+        active: true,
+        date: Date {
+            year: parsed_date.year(),
+            month: parsed_date.month(),
+            day: parsed_date.day(),
+            weekday: Some(parsed_date.format("%a").to_string()),
+        },
+        time: None,
+        end_time: None,
+        repeater: None,
+    });
+
+    let title = entry.title.clone();
+    write_document(file, &doc)?;
+    println!("Set deadline {} on: {}", date_str, title);
+    Ok(())
+}
+
+pub fn clear_schedule(file: &Path, line: usize) -> Result<()> {
+    let mut doc = read_and_parse_file(file)?;
+    let entry_idx = doc.entries.iter()
+        .position(|e| e.line_number == line)
+        .ok_or_else(|| anyhow::anyhow!("No entry found at line {}", line))?;
+    let entry = &mut doc.entries[entry_idx];
+    entry.scheduled = None;
+    entry.deadline = None;
+    let title = entry.title.clone();
+    write_document(file, &doc)?;
+    println!("Cleared schedule/deadline on: {}", title);
+    Ok(())
+}
+
+// ==================== agenda day / week / deadlines ====================
+
+/// Parse YYYY-MM-DD or default to today.
+fn parse_date_or_today(date: Option<&str>) -> Result<NaiveDate> {
+    match date {
+        Some(s) => NaiveDate::parse_from_str(s, "%Y-%m-%d")
+            .with_context(|| format!("Invalid date format '{}' — expected YYYY-MM-DD", s)),
+        None => Ok(Local::now().date_naive()),
+    }
+}
+
+/// Collect all TodoItems that have a SCHEDULED date.
+fn collect_scheduled(path: &Path) -> Result<Vec<TodoItem>> {
+    let files = find_org_files(path)?;
+    let mut items = Vec::new();
+    for file in files {
+        let doc = match read_and_parse_file(&file) {
+            Ok(d) => d,
+            Err(e) => { eprintln!("Warning: {}", e); continue; }
+        };
+        for entry in &doc.entries {
+            if let Some(ref kw) = entry.keyword {
+                if matches!(kw, Keyword::Done | Keyword::Cancelled) { continue; }
+            }
+            if entry.scheduled.is_some() {
+                items.push(TodoItem {
+                    file: file.clone(),
+                    line: entry.line_number,
+                    keyword: entry.keyword.clone().unwrap_or(Keyword::Todo),
+                    priority: entry.priority,
+                    title: entry.title.clone(),
+                    tags: entry.tags.clone(),
+                    scheduled: entry.scheduled.clone(),
+                    deadline: entry.deadline.clone(),
+                });
+            }
+        }
+    }
+    Ok(items)
+}
+
+fn naive_date_of(ts: &Timestamp) -> NaiveDate {
+    NaiveDate::from_ymd_opt(ts.date.year, ts.date.month, ts.date.day)
+        .unwrap_or_else(|| Local::now().date_naive())
+}
+
+fn print_agenda_item(item: &TodoItem) {
+    let file_name = item.file.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+    let location = format!("{}:{}", file_name, item.line).dimmed();
+    let kw_str = match item.keyword {
+        Keyword::Todo       => "TODO".yellow().bold().to_string(),
+        Keyword::Next       => "NEXT".cyan().bold().to_string(),
+        Keyword::Waiting    => "WAITING".magenta().bold().to_string(),
+        Keyword::InProgress => "IN-PROGRESS".blue().bold().to_string(),
+        Keyword::Done       => "DONE".green().bold().to_string(),
+        Keyword::Cancelled  => "CANCELLED".red().bold().to_string(),
+    };
+    let priority_str = match item.priority {
+        Some(Priority::A) => "[#A] ".red().to_string(),
+        Some(Priority::B) => "[#B] ".yellow().to_string(),
+        Some(Priority::C) => "[#C] ".blue().to_string(),
+        None => String::new(),
+    };
+    let tags_str = if item.tags.is_empty() {
+        String::new()
+    } else {
+        format!(" :{}: ", item.tags.join(":")).cyan().to_string()
+    };
+    let deadline_str = if let Some(ref dl) = item.deadline {
+        format!(" DL:{}", format_date_short(&dl.date)).red().to_string()
+    } else {
+        String::new()
+    };
+    println!("  {} {} {}{}{}{}", location, kw_str, priority_str, item.title, tags_str, deadline_str);
+}
+
+pub fn agenda_day(date: Option<&str>, path: &Path) -> Result<()> {
+    let target = parse_date_or_today(date)?;
+    let items = collect_scheduled(path)?;
+    let day_items: Vec<&TodoItem> = items.iter()
+        .filter(|i| i.scheduled.as_ref().map(|s| naive_date_of(s) == target).unwrap_or(false))
+        .collect();
+
+    println!("{}", format!("── Agenda: {} ──", target.format("%Y-%m-%d %A")).bold().yellow());
+    if day_items.is_empty() {
+        println!("  (nothing scheduled)");
+    } else {
+        for item in day_items {
+            print_agenda_item(item);
+        }
+    }
+    println!();
+    Ok(())
+}
+
+pub fn agenda_week(date: Option<&str>, path: &Path) -> Result<()> {
+    let start = parse_date_or_today(date)?;
+    let end = start + Duration::days(6);
+    let items = collect_scheduled(path)?;
+
+    println!("{}", format!("── Agenda: {} – {} ──",
+        start.format("%Y-%m-%d"), end.format("%Y-%m-%d")).bold().yellow());
+
+    let mut found = false;
+    for offset in 0..7i64 {
+        let day = start + Duration::days(offset);
+        let day_items: Vec<&TodoItem> = items.iter()
+            .filter(|i| i.scheduled.as_ref().map(|s| naive_date_of(s) == day).unwrap_or(false))
+            .collect();
+        if !day_items.is_empty() {
+            println!("  {}", day.format("%A %-d %b").to_string().bold());
+            for item in day_items {
+                print_agenda_item(item);
+            }
+            found = true;
+        }
+    }
+    if !found {
+        println!("  (nothing scheduled this week)");
+    }
+    println!();
+    Ok(())
+}
+
+pub fn agenda_deadlines(path: &Path, days: i64) -> Result<()> {
+    let today = Local::now().date_naive();
+    let horizon = today + Duration::days(days);
+    let files = find_org_files(path)?;
+
+    let mut overdue: Vec<TodoItem> = Vec::new();
+    let mut upcoming: Vec<TodoItem> = Vec::new();
+
+    for file in files {
+        let doc = match read_and_parse_file(&file) {
+            Ok(d) => d,
+            Err(e) => { eprintln!("Warning: {}", e); continue; }
+        };
+        for entry in &doc.entries {
+            if let Some(ref kw) = entry.keyword {
+                if matches!(kw, Keyword::Done | Keyword::Cancelled) { continue; }
+            }
+            if let Some(ref dl) = entry.deadline {
+                let dl_date = naive_date_of(dl);
+                let item = TodoItem {
+                    file: file.clone(),
+                    line: entry.line_number,
+                    keyword: entry.keyword.clone().unwrap_or(Keyword::Todo),
+                    priority: entry.priority,
+                    title: entry.title.clone(),
+                    tags: entry.tags.clone(),
+                    scheduled: entry.scheduled.clone(),
+                    deadline: entry.deadline.clone(),
+                };
+                if dl_date < today {
+                    overdue.push(item);
+                } else if dl_date <= horizon {
+                    upcoming.push(item);
+                }
+            }
+        }
+    }
+
+    overdue.sort_by_key(|i| naive_date_of(i.deadline.as_ref().unwrap()));
+    upcoming.sort_by_key(|i| naive_date_of(i.deadline.as_ref().unwrap()));
+
+    if !overdue.is_empty() {
+        println!("{}", "── Overdue ──".bold().red());
+        for item in &overdue {
+            print_agenda_item(item);
+        }
+        println!();
+    }
+
+    if !upcoming.is_empty() {
+        println!("{}", format!("── Due within {} days ──", days).bold().yellow());
+        for item in &upcoming {
+            print_agenda_item(item);
+        }
+        println!();
+    }
+
+    if overdue.is_empty() && upcoming.is_empty() {
+        println!("No deadlines in the next {} days.", days);
+    }
+
     Ok(())
 }

@@ -60,7 +60,7 @@ fn test_export_skips_lock_files() {
 
     let output = org_cli()
         .args([
-            "export",
+            "export", "html",
             dir.path().to_str().unwrap(),
             "--output",
             out.to_str().unwrap(),
@@ -107,7 +107,7 @@ fn test_export_title_falls_back_to_first_heading() {
 
     let output = org_cli()
         .args([
-            "export",
+            "export", "html",
             dir.path().to_str().unwrap(),
             "--output",
             out.to_str().unwrap(),
@@ -145,7 +145,7 @@ fn test_export_title_prefers_plus_title_keyword() {
 
     let output = org_cli()
         .args([
-            "export",
+            "export", "html",
             dir.path().to_str().unwrap(),
             "--output",
             out.to_str().unwrap(),

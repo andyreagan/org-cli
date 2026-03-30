@@ -339,7 +339,7 @@ fn test_export_cli_subcommand() {
 
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_org-cli"))
         .args([
-            "export",
+            "export", "html",
             dir.path().to_str().unwrap(),
             "--output",
             out_dir.path().to_str().unwrap(),
@@ -376,7 +376,7 @@ fn test_export_cli_with_id_resolution() {
 
     let output = std::process::Command::new(env!("CARGO_BIN_EXE_org-cli"))
         .args([
-            "export",
+            "export", "html",
             dir.path().to_str().unwrap(),
             "--output",
             out_dir.path().to_str().unwrap(),
