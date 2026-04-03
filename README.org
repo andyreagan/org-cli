@@ -3,16 +3,24 @@
 [[https://github.com/andyreagan/org-cli/actions/workflows/test.yml][https://github.com/andyreagan/org-cli/actions/workflows/test.yml/badge.svg]]
 [[https://github.com/andyreagan/org-cli/actions/workflows/release.yml][https://github.com/andyreagan/org-cli/actions/workflows/release.yml/badge.svg]]
 
-A Rust CLI for interacting with org-mode files.
+A Rust CLI for interacting with org-mode files. Commands are organised into
+org-mode domains so the structure mirrors Emacs org and is easy to explore
+with =--help= at any level.
 
-** Features
+#+begin_src
+org-cli <domain> <subcommand> [args]
+#+end_src
 
-- *List* TODO/NEXT/WAITING items across files, grouped by keyword
-- *Add* new TODO items with optional tags
-- *Done / Cancel / Wait* — update item status with timestamps
-- *Reschedule* items to a new date
-- *Show* pretty-printed headings and TODOs
-- *Export* org files to an HTML site with resolved =org-id= links
+** Domains
+
+| Domain      | What it covers                                      |
+|-------------+-----------------------------------------------------|
+| =todo=      | TODO state on individual items                      |
+| =schedule=  | SCHEDULED / DEADLINE dates on items                 |
+| =agenda=    | Time-based cross-file views                         |
+| =structure= | Inspecting the shape of a single file               |
+| =export=    | Rendering org files to other formats                |
+| =site=      | Site-build tooling (normalise, blog index, publish) |
 
 ** Install
 
@@ -44,27 +52,100 @@ cargo install --path .
 
 ** Usage
 
+*** todo — manage item state
+
 #+begin_src bash
-# List all actionable items
-org-cli list ~/org/
+# List all active items across a directory (or single file)
+org-cli todo list ~/org/
 
-# Add a TODO
-org-cli add "Write README" --file ~/org/tasks.org --tag docs
+# Add a new TODO
+org-cli todo add "Write README" --file ~/org/tasks.org --tag docs
 
-# Mark done / cancel / wait
-org-cli done ~/org/tasks.org 12
-org-cli cancel ~/org/tasks.org 15
-org-cli wait ~/org/tasks.org 18 --date 2026-04-01
-
-# Reschedule
-org-cli reschedule ~/org/tasks.org 12 --date 2026-04-15
-
-# Pretty-print a file
-org-cli show ~/org/tasks.org
-
-# Export to HTML
-org-cli export ~/org/ --output ~/public_html/
+# State transitions (file + line number shown by `todo list` or `structure show`)
+org-cli todo done   ~/org/tasks.org 12
+org-cli todo cancel ~/org/tasks.org 15
+org-cli todo wait   ~/org/tasks.org 18 --date 2026-04-01
+org-cli todo next   ~/org/tasks.org 22
+org-cli todo set    ~/org/tasks.org 22 IN-PROGRESS
 #+end_src
+
+*** schedule — manage dates
+
+#+begin_src bash
+# Set or replace a SCHEDULED date
+org-cli schedule set ~/org/tasks.org 12 2026-04-15
+
+# Set or replace a DEADLINE
+org-cli schedule deadline ~/org/tasks.org 12 2026-04-30
+
+# Remove both SCHEDULED and DEADLINE from an item
+org-cli schedule clear ~/org/tasks.org 12
+#+end_src
+
+*** agenda — time-based views
+
+#+begin_src bash
+# Items scheduled for today (or a given date)
+org-cli agenda day
+org-cli agenda day 2026-04-01 --path ~/org/
+
+# Items scheduled within the next 7 days
+org-cli agenda week
+org-cli agenda week 2026-04-01 --path ~/org/
+
+# Overdue and approaching deadlines (default: 14-day window)
+org-cli agenda deadlines ~/org/
+org-cli agenda deadlines ~/org/ --days 30
+#+end_src
+
+*** structure — inspect a file
+
+#+begin_src bash
+# Pretty-print headings, keywords, priorities, tags, and planning dates
+org-cli structure show ~/org/tasks.org
+#+end_src
+
+*** export — render to other formats
+
+#+begin_src bash
+# Export an org directory (or file) to an HTML site with resolved org-id links
+org-cli export html ~/org/ --output ~/public_html/
+#+end_src
+
+*** site — build tooling
+
+#+begin_src bash
+# Full pipeline: normalise → blog index → export HTML → post-process
+org-cli site build ~/org/
+org-cli site build ~/org/ --force          # ignore incremental cache
+org-cli site build ~/org/ --config my.toml
+
+# Normalise source files in-place (flatten nested id: links, consolidate backlinks)
+org-cli site normalise ~/org/
+org-cli site normalise ~/org/ --dry-run    # preview without writing
+
+# Regenerate blog index and tag pages only
+org-cli site blog ~/org/
+#+end_src
+
+** Migrating from v0.3
+
+The flat commands from v0.3 (=list=, =add=, =done=, =cancel=, =wait=,
+=reschedule=, =show=, =export=, =normalise=, =build=) still work but print a
+deprecation hint. Update scripts to the new forms at your convenience.
+
+| v0.3                          | v0.4                           |
+|-------------------------------+--------------------------------|
+| =org-cli list=                | =org-cli todo list=            |
+| =org-cli add=                 | =org-cli todo add=             |
+| =org-cli done=                | =org-cli todo done=            |
+| =org-cli cancel=              | =org-cli todo cancel=          |
+| =org-cli wait=                | =org-cli todo wait=            |
+| =org-cli reschedule=          | =org-cli schedule set=         |
+| =org-cli show=                | =org-cli structure show=       |
+| =org-cli export=              | =org-cli export html=          |
+| =org-cli normalise=           | =org-cli site normalise=       |
+| =org-cli build=               | =org-cli site build=           |
 
 ** License
 
